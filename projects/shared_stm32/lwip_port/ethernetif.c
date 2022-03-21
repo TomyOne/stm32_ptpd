@@ -561,7 +561,9 @@ static void ethernetif_link_config(struct netif *netif)
   ethernetif_handle.Init.PhyAddress = LAN8742A_PHY_ADDRESS;
   ethernetif_handle.Init.MACAddr = &netif->hwaddr[0];
   ethernetif_handle.Init.RxMode = ETH_RXINTERRUPT_MODE;
+#ifdef ETH_TXINTERRUPT_MODE
   ethernetif_handle.Init.TxMode = ETH_TXINTERRUPT_MODE;
+#endif
   ethernetif_handle.Init.ChecksumMode = ETH_CHECKSUM_BY_HARDWARE;
   ethernetif_handle.Init.MediaInterface = ETH_MEDIA_INTERFACE_RMII;
   HAL_ETH_Init(&ethernetif_handle);
@@ -663,7 +665,8 @@ static void ethernetif_link_check(struct netif *netif)
     osMutexAcquire(ethernetif_mutex_id, osWaitForever);
 
     // Configure the Ethernet MAC and DMA.
-    HAL_ETH_Config(&ethernetif_handle);
+//    HAL_ETH_Config(&ethernetif_handle);
+    HAL_ETH_Init(&ethernetif_handle);
 
     // Enable MAC and DMA transmission and reception.
     HAL_ETH_Start(&ethernetif_handle);
