@@ -373,7 +373,12 @@ static void gps_peripheral_init(void)
   dma_init.MemBurst = LL_DMA_MBURST_SINGLE;
   dma_init.MemoryOrM2MDstDataSize = LL_DMA_MDATAALIGN_BYTE;
   dma_init.MemoryOrM2MDstIncMode = LL_DMA_MEMORY_INCREMENT;
+#ifdef STM32F7
+  dma_init.PeriphOrM2MSrcAddress = (uint32_t) &USART6->RDR;
+#else
   dma_init.PeriphOrM2MSrcAddress = (uint32_t) &USART6->DR;
+#endif
+
   dma_init.PeriphBurst = LL_DMA_PBURST_SINGLE;
   dma_init.PeriphOrM2MSrcDataSize = LL_DMA_PDATAALIGN_BYTE;
   dma_init.PeriphOrM2MSrcIncMode = LL_DMA_PERIPH_NOINCREMENT;
