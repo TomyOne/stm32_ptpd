@@ -2135,6 +2135,7 @@ typedef  void (*pETH_CallbackTypeDef)(ETH_HandleTypeDef * heth); /*!< pointer to
   */
 HAL_StatusTypeDef HAL_ETH_Init(ETH_HandleTypeDef *heth);
 HAL_StatusTypeDef HAL_ETH_DeInit(ETH_HandleTypeDef *heth);
+HAL_StatusTypeDef HAL_ETH_Config(ETH_HandleTypeDef *heth);
 void HAL_ETH_MspInit(ETH_HandleTypeDef *heth);
 void HAL_ETH_MspDeInit(ETH_HandleTypeDef *heth);
 HAL_StatusTypeDef HAL_ETH_DMATxDescListInit(ETH_HandleTypeDef *heth, ETH_DMADescTypeDef *DMATxDescTab, uint8_t* TxBuff, uint32_t TxBuffCount);

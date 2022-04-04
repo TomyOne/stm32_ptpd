@@ -61,16 +61,16 @@
 #endif
 
 // Ethernet receive DMA descriptors.
-__ALIGN_BEGIN ETH_DMADescTypeDef dma_rx_descriptor_table[ETH_RXBUFNB] __SECTION_NAME("dtcm") __ALIGN_END;
+ETH_DMADescTypeDef dma_rx_descriptor_table[ETH_RXBUFNB] __SECTION_NAME(".RxDecripSection");
 
 // Ethernet transmit DMA descriptors.
-__ALIGN_BEGIN ETH_DMADescTypeDef dma_tx_descriptor_table[ETH_TXBUFNB] __SECTION_NAME("dtcm") __ALIGN_END;
+ETH_DMADescTypeDef dma_tx_descriptor_table[ETH_TXBUFNB] __SECTION_NAME(".TxDescripSection");
 
 // Ethernet receive buffers.
-__ALIGN_BEGIN uint8_t dma_rx_buffer[ETH_RXBUFNB][ETH_RX_BUF_SIZE] __SECTION_NAME("dtcm") __ALIGN_END;
+uint8_t dma_rx_buffer[ETH_RXBUFNB][ETH_RX_BUF_SIZE] __SECTION_NAME(".RxarraySection");
 
 // Ethernet transmit buffers.
-__ALIGN_BEGIN uint8_t dma_tx_buffer[ETH_TXBUFNB][ETH_TX_BUF_SIZE] __SECTION_NAME("dtcm") __ALIGN_END;
+uint8_t dma_tx_buffer[ETH_TXBUFNB][ETH_TX_BUF_SIZE] __SECTION_NAME(".TxarraySection");
 
 // Ethernet mutex identifier.
 static osMutexId_t ethernetif_mutex_id = NULL;
@@ -558,15 +558,15 @@ static void ethernetif_link_config(struct netif *netif)
   memset(&ethernetif_handle, 0, sizeof(ethernetif_handle));
   ethernetif_handle.Instance = ETH;
   ethernetif_handle.Init.AutoNegotiation = ETH_AUTONEGOTIATION_ENABLE;
-  ethernetif_handle.Init.PhyAddress = LAN8742A_PHY_ADDRESS;
+  ethernetif_handle.Init.PhyAddress = 16;
   ethernetif_handle.Init.MACAddr = &netif->hwaddr[0];
   ethernetif_handle.Init.RxMode = ETH_RXINTERRUPT_MODE;
 #ifdef ETH_TXINTERRUPT_MODE
   ethernetif_handle.Init.TxMode = ETH_TXINTERRUPT_MODE;
 #endif
   ethernetif_handle.Init.ChecksumMode = ETH_CHECKSUM_BY_HARDWARE;
-  ethernetif_handle.Init.MediaInterface = ETH_MEDIA_INTERFACE_RMII;
-  HAL_ETH_Init(&ethernetif_handle);
+  ethernetif_handle.Init.MediaInterface = ETH_MEDIA_INTERFACE_MII;
+  HAL_StatusTypeDef status = HAL_ETH_Init(&ethernetif_handle);
 
   // Initialize Tx and Rx Descriptors list: Chain Mode.
   HAL_ETH_DMATxDescListInit(&ethernetif_handle, dma_tx_descriptor_table, &dma_tx_buffer[0][0], ETH_TXBUFNB);
@@ -629,10 +629,10 @@ static void ethernetif_link_config(struct netif *netif)
   HAL_ETH_ConfigDMA(&ethernetif_handle, &dma_init);
 
   // Enable interrupt on change of link status.
-  uint32_t regvalue = 0;
-  HAL_ETH_ReadPHYRegister(&ethernetif_handle, PHY_ISFR, &regvalue);
-  regvalue |= PHY_ISFR_INT4;
-  HAL_ETH_WritePHYRegister(&ethernetif_handle, PHY_ISFR , regvalue);
+//  uint32_t regvalue = 0;
+//  HAL_ETH_ReadPHYRegister(&ethernetif_handle, PHY_ISFR, &regvalue);
+//  regvalue |= PHY_ISFR_INT4;
+//  HAL_ETH_WritePHYRegister(&ethernetif_handle, PHY_ISFR , regvalue);
 
   // Enable PTP time stamping.
   ethptp_start(ETH_PTP_FineUpdate);
@@ -665,8 +665,7 @@ static void ethernetif_link_check(struct netif *netif)
     osMutexAcquire(ethernetif_mutex_id, osWaitForever);
 
     // Configure the Ethernet MAC and DMA.
-//    HAL_ETH_Config(&ethernetif_handle);
-    HAL_ETH_Init(&ethernetif_handle);
+    HAL_ETH_Config(&ethernetif_handle);
 
     // Enable MAC and DMA transmission and reception.
     HAL_ETH_Start(&ethernetif_handle);

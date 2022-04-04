@@ -316,6 +316,20 @@ HAL_StatusTypeDef HAL_ETH_Init(ETH_HandleTypeDef *heth)
   /* Write to ETHERNET MAC MIIAR: Configure the ETHERNET CSR Clock Range */
   (heth->Instance)->MACMIIAR = (uint32_t)tempreg;
   
+    uint32_t reg = 0;
+    /* Save PHY address put into function */
+    uint32_t phy_previous_address = heth->Init.PhyAddress;
+    /* Change PHY address to default PHY, we need to disable that PHY */
+    heth->Init.PhyAddress = 0;
+    HAL_ETH_WritePHYRegister(heth, PHY_BCR, PHY_RESET);
+    /* Delay to assure PHY reset */
+    HAL_Delay(PHY_RESET_DELAY);
+    HAL_ETH_ReadPHYRegister(heth, PHY_BCR, &reg);
+    HAL_ETH_WritePHYRegister(heth, PHY_BCR, phyreg | PHY_ISOLATE | PHY_POWERDOWN);
+    HAL_ETH_ReadPHYRegister(heth, PHY_BCR, &reg);
+    /* Restore PHY address to our new T1S PHY */
+    heth->Init.PhyAddress = phy_previous_address;
+
   /*-------------------- PHY initialization and configuration ----------------*/
   /* Put the PHY in reset mode */
   if((HAL_ETH_WritePHYRegister(heth, PHY_BCR, PHY_RESET)) != HAL_OK)
@@ -340,7 +354,8 @@ HAL_StatusTypeDef HAL_ETH_Init(ETH_HandleTypeDef *heth)
   {
     /* Get tick */
     tickstart = HAL_GetTick();
-    
+    HAL_ETH_ReadPHYRegister(heth, PHY_BSR, &phyreg);
+    HAL_ETH_WritePHYRegister(heth, PHY_BCR, phyreg | PHY_AUTONEGOTIATION);
     /* We wait for linked status */
     do
     {
@@ -444,7 +459,7 @@ HAL_StatusTypeDef HAL_ETH_Init(ETH_HandleTypeDef *heth)
     else
     {   
       /* Set Ethernet speed to 100M following the auto-negotiation */ 
-      (heth->Init).Speed = ETH_SPEED_100M;
+      (heth->Init).Speed = ETH_SPEED_10M;
     }
   }
   else /* AutoNegotiation Disable */
@@ -474,6 +489,11 @@ HAL_StatusTypeDef HAL_ETH_Init(ETH_HandleTypeDef *heth)
     HAL_Delay(PHY_CONFIG_DELAY);
   }
   
+  HAL_ETH_ReadPHYRegister(heth, PHY_BCR, &phyreg);
+  HAL_ETH_WritePHYRegister(heth, PHY_BCR, phyreg & ~PHY_ISOLATE);
+  HAL_ETH_ReadPHYRegister(heth, PHY_BCR, &phyreg);
+  HAL_ETH_WritePHYRegister(heth, 18, 0x705);
+
   /* Config MAC and DMA */
   ETH_MACDMAConfig(heth, err);
   
@@ -512,6 +532,194 @@ HAL_StatusTypeDef HAL_ETH_DeInit(ETH_HandleTypeDef *heth)
 
   /* Release Lock */
   __HAL_UNLOCK(heth);
+
+  /* Return function status */
+  return HAL_OK;
+}
+
+/**
+  * @brief  Initialize and configure the Ethernet PHY.
+  * @param  heth pointer to a ETH_HandleTypeDef structure that contains
+  *         the configuration information for ETHERNET module
+  * @retval HAL status
+  */
+HAL_StatusTypeDef HAL_ETH_Config(ETH_HandleTypeDef *heth)
+{
+  uint32_t phyreg = 0U;
+  uint32_t tickstart = 0U;
+  uint32_t err = ETH_SUCCESS;
+
+  /* Check the ETH peripheral state */
+  if(heth == NULL)
+  {
+    return HAL_ERROR;
+  }
+
+  /* Check parameters */
+  assert_param(IS_ETH_AUTONEGOTIATION(heth->Init.AutoNegotiation));
+
+  /*-------------------- PHY initialization and configuration ----------------*/
+#if 0
+  /* Put the PHY in reset mode */
+  if((HAL_ETH_WritePHYRegister(heth, PHY_BCR, PHY_RESET)) != HAL_OK)
+  {
+    /* In case of write timeout */
+    err = ETH_ERROR;
+
+    /* Config MAC and DMA */
+    ETH_MACDMAConfig(heth, err);
+
+    /* Set the ETH peripheral state to READY */
+    heth->State = HAL_ETH_STATE_READY;
+
+    /* Return HAL_ERROR */
+    return HAL_ERROR;
+  }
+
+  /* Delay to assure PHY reset */
+  HAL_Delay(PHY_RESET_DELAY);
+#endif
+
+  if((heth->Init).AutoNegotiation != ETH_AUTONEGOTIATION_DISABLE)
+  {
+    /* Get tick */
+    tickstart = HAL_GetTick();
+
+    /* We wait for linked status */
+    do
+    {
+      HAL_ETH_ReadPHYRegister(heth, PHY_BSR, &phyreg);
+
+      /* Check for the Timeout */
+      if((HAL_GetTick() - tickstart ) > ETH_TIMEOUT_LINKED_STATE)
+      {
+        /* In case of write timeout */
+        err = ETH_ERROR;
+
+        /* Config MAC and DMA */
+        ETH_MACDMAConfig(heth, err);
+
+        heth->State= HAL_ETH_STATE_READY;
+
+        /* Process Unlocked */
+        __HAL_UNLOCK(heth);
+
+        return HAL_TIMEOUT;
+      }
+    } while (((phyreg & PHY_LINKED_STATUS) != PHY_LINKED_STATUS));
+
+
+    /* Enable Auto-Negotiation */
+    if((HAL_ETH_WritePHYRegister(heth, PHY_BCR, PHY_AUTONEGOTIATION)) != HAL_OK)
+    {
+      /* In case of write timeout */
+      err = ETH_ERROR;
+
+      /* Config MAC and DMA */
+      ETH_MACDMAConfig(heth, err);
+
+      /* Set the ETH peripheral state to READY */
+      heth->State = HAL_ETH_STATE_READY;
+
+      /* Return HAL_ERROR */
+      return HAL_ERROR;
+    }
+
+    /* Get tick */
+    tickstart = HAL_GetTick();
+
+    /* Wait until the auto-negotiation will be completed */
+    do
+    {
+      HAL_ETH_ReadPHYRegister(heth, PHY_BSR, &phyreg);
+
+      /* Check for the Timeout */
+      if((HAL_GetTick() - tickstart ) > ETH_TIMEOUT_AUTONEGO_COMPLETED)
+      {
+        /* In case of write timeout */
+        err = ETH_ERROR;
+
+        /* Config MAC and DMA */
+        ETH_MACDMAConfig(heth, err);
+
+        heth->State= HAL_ETH_STATE_READY;
+
+        /* Process Unlocked */
+        __HAL_UNLOCK(heth);
+
+        return HAL_TIMEOUT;
+      }
+
+    } while (((phyreg & PHY_AUTONEGO_COMPLETE) != PHY_AUTONEGO_COMPLETE));
+
+    /* Read the result of the auto-negotiation */
+    if((HAL_ETH_ReadPHYRegister(heth, PHY_SR, &phyreg)) != HAL_OK)
+    {
+      /* In case of write timeout */
+      err = ETH_ERROR;
+
+      /* Config MAC and DMA */
+      ETH_MACDMAConfig(heth, err);
+
+      /* Set the ETH peripheral state to READY */
+      heth->State = HAL_ETH_STATE_READY;
+
+      /* Return HAL_ERROR */
+      return HAL_ERROR;
+    }
+
+    /* Configure the MAC with the Duplex Mode fixed by the auto-negotiation process */
+    if((phyreg & PHY_DUPLEX_STATUS) != (uint32_t)RESET)
+    {
+      /* Set Ethernet duplex mode to Full-duplex following the auto-negotiation */
+      (heth->Init).DuplexMode = ETH_MODE_FULLDUPLEX;
+    }
+    else
+    {
+      /* Set Ethernet duplex mode to Half-duplex following the auto-negotiation */
+      (heth->Init).DuplexMode = ETH_MODE_HALFDUPLEX;
+    }
+    /* Configure the MAC with the speed fixed by the auto-negotiation process */
+    if((phyreg & PHY_SPEED_STATUS) == PHY_SPEED_STATUS)
+    {
+      /* Set Ethernet speed to 10M following the auto-negotiation */
+      (heth->Init).Speed = ETH_SPEED_10M;
+    }
+    else
+    {
+      /* Set Ethernet speed to 100M following the auto-negotiation */
+      (heth->Init).Speed = ETH_SPEED_10M;
+    }
+  }
+  else /* AutoNegotiation Disable */
+  {
+    /* Check parameters */
+    assert_param(IS_ETH_SPEED(heth->Init.Speed));
+    assert_param(IS_ETH_DUPLEX_MODE(heth->Init.DuplexMode));
+
+    /* Set MAC Speed and Duplex Mode */
+    if(HAL_ETH_WritePHYRegister(heth, PHY_BCR, ((uint16_t)((heth->Init).DuplexMode >> 3U) |
+                                                (uint16_t)((heth->Init).Speed >> 1U))) != HAL_OK)
+    {
+      /* In case of write timeout */
+      err = ETH_ERROR;
+
+      /* Config MAC and DMA */
+      ETH_MACDMAConfig(heth, err);
+
+      /* Set the ETH peripheral state to READY */
+      heth->State = HAL_ETH_STATE_READY;
+
+      /* Return HAL_ERROR */
+      return HAL_ERROR;
+    }
+
+    /* Delay to assure PHY configuration */
+    HAL_Delay(PHY_CONFIG_DELAY);
+  }
+
+  /* Set ETH HAL State to Ready */
+  heth->State= HAL_ETH_STATE_READY;
 
   /* Return function status */
   return HAL_OK;
