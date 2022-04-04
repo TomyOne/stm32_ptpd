@@ -13,7 +13,7 @@
 #include "ntshell.h"
 #include "ntlibc.h"
 #include "console.h"
-
+#include "stm32f7xx_hal_uart.h"
 // Console event flag values.
 #define CONSOLE_EVENT_RECV          0x0001u
 #define CONSOLE_EVENT_SEND          0x0002u
@@ -42,6 +42,9 @@
 #define CONSOLE_TX_PINSOURCE      LL_GPIO_PIN_8
 #define CONSOLE_RX_PINSOURCE      LL_GPIO_PIN_9
 #endif
+
+/* UART handler declaration */
+UART_HandleTypeDef UartHandle;
 
 #if defined(USE_STM32F4XX_NUCLEO_144)
 //
@@ -458,39 +461,97 @@ static void console_thread(void *arg)
 // WARNING: This function called prior to RTOS initialization.
 void console_init(void)
 {
-  LL_GPIO_InitTypeDef gpio_init;
-  LL_USART_InitTypeDef usart_init;
+	GPIO_InitTypeDef  GPIO_InitStruct;
 
-  // Enable peripheral clocks.
-  LL_AHB1_GRP1_EnableClock(CONSOLE_PERIPH_GPIO);
-  CONSOLE_PERIPH_ENABLECLK(CONSOLE_PERIPH_USART);
+  RCC_PeriphCLKInitTypeDef RCC_PeriphClkInit;
 
-  // Configure GPIO pin for USART TX.
-  gpio_init.Pin = CONSOLE_TX_PIN;
-  gpio_init.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
-  gpio_init.Pull = LL_GPIO_PULL_UP;
-  gpio_init.Speed = LL_GPIO_SPEED_FREQ_HIGH;
-  gpio_init.Mode = LL_GPIO_MODE_ALTERNATE;
-  gpio_init.Alternate = CONSOLE_GPIO_AF;
-  LL_GPIO_Init(CONSOLE_GPIO, &gpio_init);
+  /*##-1- Enable peripherals and GPIO Clocks #################################*/
+  /* Enable GPIO TX/RX clock */
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
 
-  // Configure GPIO pin for USART RX.
-  gpio_init.Pin = CONSOLE_RX_PIN;
-  gpio_init.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
-  gpio_init.Pull = LL_GPIO_PULL_UP;
-  gpio_init.Speed = LL_GPIO_SPEED_FREQ_HIGH;
-  gpio_init.Mode = LL_GPIO_MODE_ALTERNATE;
-  gpio_init.Alternate = CONSOLE_GPIO_AF;
-  LL_GPIO_Init(CONSOLE_GPIO, &gpio_init);
+  /* Select SysClk as source of USART1 clocks */
+  RCC_PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART1;
+  RCC_PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_SYSCLK;
+  HAL_RCCEx_PeriphCLKConfig(&RCC_PeriphClkInit);
+
+  /* Enable USARTx clock */
+  __HAL_RCC_USART3_CLK_ENABLE();
+
+  /*##-2- Configure peripheral GPIO ##########################################*/
+  /* UART TX GPIO pin configuration  */
+  GPIO_InitStruct.Pin       = CONSOLE_TX_PIN;
+  GPIO_InitStruct.Mode      = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull      = GPIO_PULLUP;
+  GPIO_InitStruct.Speed     = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.Alternate = CONSOLE_GPIO_AF;
+
+  HAL_GPIO_Init(CONSOLE_GPIO, &GPIO_InitStruct);
+
+  /* UART RX GPIO pin configuration  */
+  GPIO_InitStruct.Pin = CONSOLE_RX_PIN;
+  GPIO_InitStruct.Alternate = CONSOLE_GPIO_AF;
+
+  HAL_GPIO_Init(CONSOLE_GPIO, &GPIO_InitStruct);
+
+
+  /*##-1- Configure the UART peripheral ######################################*/
+      /* Put the USART peripheral in the Asynchronous mode (UART Mode) */
+      /* UART configured as follows:
+          - Word Length = 8 Bits
+          - Stop Bit    = One Stop bit
+          - Parity      = None
+          - BaudRate    = 115200 baud
+          - Hardware flow control disabled (RTS and CTS signals) */
+      UartHandle.Instance        = USART3;
+
+      UartHandle.Init.BaudRate   = 115200;
+      UartHandle.Init.WordLength = UART_WORDLENGTH_8B;
+      UartHandle.Init.StopBits   = UART_STOPBITS_1;
+      UartHandle.Init.Parity     = UART_PARITY_NONE;
+      UartHandle.Init.HwFlowCtl  = UART_HWCONTROL_NONE;
+      UartHandle.Init.Mode       = UART_MODE_TX_RX;
+      UartHandle.Init.OverSampling = UART_OVERSAMPLING_16;
+      HAL_UART_Init(&UartHandle);
+
+
+//  LL_GPIO_InitTypeDef gpio_init;
+//  LL_USART_InitTypeDef usart_init;
+//
+//  // Enable peripheral clocks.
+//  LL_AHB1_GRP1_EnableClock(CONSOLE_PERIPH_GPIO);
+//  CONSOLE_PERIPH_ENABLECLK(CONSOLE_PERIPH_USART);
+//
+//  // Configure GPIO pin for USART TX.
+//  gpio_init.Pin = CONSOLE_TX_PIN;
+//  gpio_init.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
+//  gpio_init.Pull = LL_GPIO_PULL_UP;
+//  gpio_init.Speed = LL_GPIO_SPEED_FREQ_HIGH;
+//  gpio_init.Mode = LL_GPIO_MODE_ALTERNATE;
+//  gpio_init.Alternate = CONSOLE_GPIO_AF;
+//  LL_GPIO_Init(CONSOLE_GPIO, &gpio_init);
+//
+//  // Configure GPIO pin for USART RX.
+//  gpio_init.Pin = CONSOLE_RX_PIN;
+//  gpio_init.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
+//  gpio_init.Pull = LL_GPIO_PULL_UP;
+//  gpio_init.Speed = LL_GPIO_SPEED_FREQ_HIGH;
+//  gpio_init.Mode = LL_GPIO_MODE_ALTERNATE;
+//  gpio_init.Alternate = CONSOLE_GPIO_AF;
+//  LL_GPIO_Init(CONSOLE_GPIO, &gpio_init);
 
   // USARTx configured as follows: 
   // 115200 baud, 8 Bits, 1 Stop, No Parity, 
   // No Flow Control, Receive and Transmit Enabled.
-  LL_USART_StructInit(&usart_init);
-  usart_init.BaudRate = console_config_baudrate();
-  usart_init.StopBits = console_config_stop_bits();
-  usart_init.Parity = console_config_parity();
-  LL_USART_Init(CONSOLE_USART, &usart_init);
+//  LL_USART_StructInit(&usart_init);
+//  usart_init.BaudRate = console_config_baudrate();
+//  usart_init.StopBits = console_config_stop_bits();
+//  usart_init.Parity = console_config_parity();
+//  usart_init.BaudRate   = 115200;
+//  usart_init.StopBits   = 0;
+//  usart_init.Parity     = 0;
+//  usart_init.OverSampling = 0;
+//  LL_USART_Init(CONSOLE_USART, &usart_init);
 
 #ifdef STM32F7
   // Disable overrun detection.
