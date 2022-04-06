@@ -71,6 +71,8 @@
 
 // Common HAL functions.
 HAL_StatusTypeDef HAL_SystemInit(void);
+void MPU_Config(void);
+void CPU_CACHE_Enable(void);
 
 void HAL_EthDelay(uint32_t delay);
 

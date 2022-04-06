@@ -69,7 +69,7 @@ HAL_StatusTypeDef HAL_SystemClockConfig(void)
 	  }
 
 	  /* Select PLL as system clock source and configure the HCLK, PCLK1 and PCLK2
-	     clocks dividers */
+		 clocks dividers */
 	  RCC_ClkInitStruct.ClockType = (RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2);
 	  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
 	  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
@@ -81,6 +81,81 @@ HAL_StatusTypeDef HAL_SystemClockConfig(void)
 	  }
 
   return HAL_OK;
+}
+
+/**
+  * @brief  Configure the MPU attributes .
+  * @param  None
+  * @retval None
+  */
+void MPU_Config(void)
+{
+  MPU_Region_InitTypeDef MPU_InitStruct;
+
+  /* Disable the MPU */
+  HAL_MPU_Disable();
+
+  /* Configure the MPU as Strongly ordered for not defined regions */
+  MPU_InitStruct.Enable = MPU_REGION_ENABLE;
+  MPU_InitStruct.BaseAddress = 0x00;
+  MPU_InitStruct.Size = MPU_REGION_SIZE_4GB;
+  MPU_InitStruct.AccessPermission = MPU_REGION_NO_ACCESS;
+  MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+  MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+  MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
+  MPU_InitStruct.Number = MPU_REGION_NUMBER0;
+  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
+  MPU_InitStruct.SubRegionDisable = 0x87;
+  MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
+
+  HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+  /* Configure the MPU as Normal Non Cacheable for Ethernet Buffers in the SRAM2 */
+  MPU_InitStruct.Enable = MPU_REGION_ENABLE;
+  MPU_InitStruct.BaseAddress = 0x2004C000;
+  MPU_InitStruct.Size = MPU_REGION_SIZE_16KB;
+  MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+  MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+  MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+  MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
+  MPU_InitStruct.Number = MPU_REGION_NUMBER1;
+  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL1;
+  MPU_InitStruct.SubRegionDisable = 0x00;
+  MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_ENABLE;
+
+  HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+  /* Configure the MPU as Device for Ethernet Descriptors in the SRAM2 */
+  MPU_InitStruct.Enable = MPU_REGION_ENABLE;
+  MPU_InitStruct.BaseAddress = 0x2004C000;
+  MPU_InitStruct.Size = MPU_REGION_SIZE_256B;
+  MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+  MPU_InitStruct.IsBufferable = MPU_ACCESS_BUFFERABLE;
+  MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+  MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
+  MPU_InitStruct.Number = MPU_REGION_NUMBER2;
+  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
+  MPU_InitStruct.SubRegionDisable = 0x00;
+  MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_ENABLE;
+
+  HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+  /* Enable the MPU */
+  HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
+}
+
+/**
+  * @brief  CPU L1-Cache enable.
+  * @param  None
+  * @retval None
+  */
+void CPU_CACHE_Enable(void)
+{
+  /* Enable I-Cache */
+  SCB_EnableICache();
+
+  /* Enable D-Cache */
+  SCB_EnableDCache();
 }
 
 // Configures TIM12 as a time base source with a 1ms time base and a dedicated tick
@@ -199,6 +274,9 @@ HAL_StatusTypeDef HAL_SystemInit(void)
   DBGMCU->APB2FZ |= DBGMCU_APB2_FZ_DBG_TIM11_STOP;
 #endif
 
+  MPU_Config();
+  CPU_CACHE_Enable();
+
   // Configure instruction and data caches, NVIC group priority, HAL timer tick
   // and low level peripheral initialization.
   if (HAL_Init() != HAL_OK)
@@ -220,80 +298,149 @@ void HAL_ETH_MspInit(ETH_HandleTypeDef *eth_handle)
 {
   if (eth_handle->Instance == ETH)
   {
+	  GPIO_InitTypeDef GPIO_InitStructure;
+
+	  /* Enable GPIOs clocks */
+	  __HAL_RCC_GPIOA_CLK_ENABLE();
+	  __HAL_RCC_GPIOB_CLK_ENABLE();
+	  __HAL_RCC_GPIOC_CLK_ENABLE();
+	  __HAL_RCC_GPIOE_CLK_ENABLE();
+	  __HAL_RCC_GPIOG_CLK_ENABLE();
+
+
+	  /* Ethernet pins configuration ************************************************/
+	  /*
+	  MII_RX_CLK -----------------------> PA1
+	  MII_TX_CLK -----------------------> PC3
+	  MII_MDIO -------------------------> PA2
+	  MII_MDC --------------------------> PC1
+	  MII_COL --------------------------> PA3
+	  MII_MII_CRS ----------------------> PA0
+	  MII_RX_DV ------------------------> PA7
+	  MII_MII_RXD0 ---------------------> PC4
+	  MII_MII_RXD1 ---------------------> PC5
+	  MII_MII_RXD2 ---------------------> PB0
+	  MII_MII_RXD3 ---------------------> PB1
+	  MII_MII_RXER ---------------------> PB10 Not used
+	  MII_MII_TX_EN --------------------> PG11
+	  MII_MII_TXD0 ---------------------> PG13
+	  MII_MII_TXD1 ---------------------> PB13
+	  MII_MII_TXD2 ---------------------> PC2
+	  MII_MII_TXD3 ---------------------> PE2
+	  */
+
+	  /* Configure PA1, PA2 and PA7 */
+	  GPIO_InitStructure.Speed = GPIO_SPEED_HIGH;
+	  GPIO_InitStructure.Mode = GPIO_MODE_AF_PP;
+	  GPIO_InitStructure.Pull = GPIO_NOPULL;
+	  GPIO_InitStructure.Alternate = GPIO_AF11_ETH;
+	  GPIO_InitStructure.Pin = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_7;
+	  HAL_GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+	  /* Configure PB13 */
+	  GPIO_InitStructure.Pin = GPIO_PIN_0 | GPIO_PIN_1 /*| GPIO_PIN_10*/ | GPIO_PIN_13;
+	  HAL_GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	  /* Configure PC1, PC4 and PC5 */
+	  GPIO_InitStructure.Pin = GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5;
+	  HAL_GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+	  /* Configure PG2, PG11, PG13 and PG14 */
+	  GPIO_InitStructure.Pin = GPIO_PIN_2 | GPIO_PIN_11 | GPIO_PIN_13;
+	  HAL_GPIO_Init(GPIOG, &GPIO_InitStructure);
+
+	  /* Configure PE2 */
+	  GPIO_InitStructure.Pin = GPIO_PIN_2;
+	  HAL_GPIO_Init(GPIOE, &GPIO_InitStructure);
+
+
+
+
+	  /* Enable the Ethernet global Interrupt */
+	  HAL_NVIC_SetPriority(ETH_IRQn, 0x7, 0);
+	  HAL_NVIC_EnableIRQ(ETH_IRQn);
+
+	  /* Enable ETHERNET clock  */
+	  __HAL_RCC_ETH_CLK_ENABLE();
+
+
+
+
+
     // Enable Ethernet peripheral clock.
-    __HAL_RCC_ETH_CLK_ENABLE();
-
-    // STM32 Nucleo 144 Ethernet GPIO pin configuration
-    //
-    // ETH_RMII_REF_CLK-------> PA1
-    // ETH_MDIO --------------> PA2
-    // ETH_RMII_CRS_DV -------> PA7
-    // ETH_RMII_TXD1   -------> PB13
-    // ETH_MDC ---------------> PC1
-    // ETH_RMII_RXD0   -------> PC4
-    // ETH_RMII_RXD1   -------> PC5
-    // ETH_RMII_TX_EN  -------> PG11
-    // ETH_RMII_TXD0   -------> PG13
-    //
-    // ETH_RST_PIN     -------> PG0 (Modified Nucleo Hardware)
-
-    // Enable GPIO clocks.
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    __HAL_RCC_GPIOB_CLK_ENABLE();
-    __HAL_RCC_GPIOC_CLK_ENABLE();
-    __HAL_RCC_GPIOG_CLK_ENABLE();
-
-    GPIO_InitTypeDef GPIO_InitStruct;
-
-    // Configure PA1, PA2 and PA7.
-    GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_7;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF11_ETH;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-    // Configure PB13.
-    GPIO_InitStruct.Pin = GPIO_PIN_13;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF11_ETH;
-    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-    // Configure PC1, PC4 and PC5.
-    GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_4 | GPIO_PIN_5;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF11_ETH;
-    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-    // Configure PG11 and PG13.
-    GPIO_InitStruct.Pin = GPIO_PIN_11 | GPIO_PIN_13;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF11_ETH;
-    HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
-
-    // Configure the PHY RST pin.
-    GPIO_InitStruct.Pin = GPIO_PIN_0;
-    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
-
-    // Reset the Ethernet PHY.
-    HAL_GPIO_WritePin(GPIOG, GPIO_PIN_0, GPIO_PIN_SET);
-    delay_ms(10);
-    HAL_GPIO_WritePin(GPIOG, GPIO_PIN_0, GPIO_PIN_RESET);
-    delay_ms(10);
-    HAL_GPIO_WritePin(GPIOG, GPIO_PIN_0, GPIO_PIN_SET);
-    delay_ms(10);
-
-    // Peripheral interrupt init.
-    HAL_NVIC_SetPriority(ETH_IRQn, ethernetif_config_preempt_priority(), 0);
-    HAL_NVIC_EnableIRQ(ETH_IRQn);
+//    __HAL_RCC_ETH_CLK_ENABLE();
+//
+//    // STM32 Nucleo 144 Ethernet GPIO pin configuration
+//    //
+//    // ETH_RMII_REF_CLK-------> PA1
+//    // ETH_MDIO --------------> PA2
+//    // ETH_RMII_CRS_DV -------> PA7
+//    // ETH_RMII_TXD1   -------> PB13
+//    // ETH_MDC ---------------> PC1
+//    // ETH_RMII_RXD0   -------> PC4
+//    // ETH_RMII_RXD1   -------> PC5
+//    // ETH_RMII_TX_EN  -------> PG11
+//    // ETH_RMII_TXD0   -------> PG13
+//    //
+//    // ETH_RST_PIN     -------> PG0 (Modified Nucleo Hardware)
+//
+//    // Enable GPIO clocks.
+//    __HAL_RCC_GPIOA_CLK_ENABLE();
+//    __HAL_RCC_GPIOB_CLK_ENABLE();
+//    __HAL_RCC_GPIOC_CLK_ENABLE();
+//    __HAL_RCC_GPIOG_CLK_ENABLE();
+//
+//    GPIO_InitTypeDef GPIO_InitStruct;
+//
+//    // Configure PA1, PA2 and PA7.
+//    GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_7;
+//    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+//    GPIO_InitStruct.Pull = GPIO_NOPULL;
+//    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+//    GPIO_InitStruct.Alternate = GPIO_AF11_ETH;
+//    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+//
+//    // Configure PB13.
+//    GPIO_InitStruct.Pin = GPIO_PIN_13;
+//    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+//    GPIO_InitStruct.Pull = GPIO_NOPULL;
+//    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+//    GPIO_InitStruct.Alternate = GPIO_AF11_ETH;
+//    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+//
+//    // Configure PC1, PC4 and PC5.
+//    GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_4 | GPIO_PIN_5;
+//    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+//    GPIO_InitStruct.Pull = GPIO_NOPULL;
+//    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+//    GPIO_InitStruct.Alternate = GPIO_AF11_ETH;
+//    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+//
+//    // Configure PG11 and PG13.
+//    GPIO_InitStruct.Pin = GPIO_PIN_11 | GPIO_PIN_13;
+//    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+//    GPIO_InitStruct.Pull = GPIO_NOPULL;
+//    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+//    GPIO_InitStruct.Alternate = GPIO_AF11_ETH;
+//    HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
+//
+//    // Configure the PHY RST pin.
+//    GPIO_InitStruct.Pin = GPIO_PIN_0;
+//    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+//    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+//    HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
+//
+//    // Reset the Ethernet PHY.
+//    HAL_GPIO_WritePin(GPIOG, GPIO_PIN_0, GPIO_PIN_SET);
+//    delay_ms(10);
+//    HAL_GPIO_WritePin(GPIOG, GPIO_PIN_0, GPIO_PIN_RESET);
+//    delay_ms(10);
+//    HAL_GPIO_WritePin(GPIOG, GPIO_PIN_0, GPIO_PIN_SET);
+//    delay_ms(10);
+//
+//    // Peripheral interrupt init.
+//    HAL_NVIC_SetPriority(ETH_IRQn, ethernetif_config_preempt_priority(), 0);
+//    HAL_NVIC_EnableIRQ(ETH_IRQn);
   }
 }
 
